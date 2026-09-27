@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1a73e8">
+  <meta name="description" content="بوابة تطبيق طلبات المواد">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon-192.png">
+  <title>طلبات المواد</title>
+  <style>
+    :root{--primary:#1a73e8;--bg:#f4f7fb;--text:#202124;--muted:#6b7280;--border:#d8dee8}
+    *{box-sizing:border-box}
+    html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--bg);font-family:Arial,Tahoma,sans-serif}
+    #appFrame{display:block;width:100%;height:100%;border:0;background:#fff}
+    .gateway-loading{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:var(--bg);transition:opacity .2s}
+    .gateway-loading.hidden{opacity:0;pointer-events:none}
+    .loading-card{width:min(90vw,420px);background:#fff;border:1px solid var(--border);border-radius:18px;padding:28px 22px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.08)}
+    .logo{width:76px;height:76px;margin:0 auto 14px;border-radius:18px;display:grid;place-items:center;background:var(--primary);color:#fff;font-size:27px;font-weight:800}
+    .loading-card h1{margin:0 0 8px;font-size:22px}.loading-card p{margin:0;color:var(--muted);line-height:1.6;font-size:14px}
+    .install-overlay{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(15,23,42,.48);backdrop-filter:blur(3px)}
+    .install-overlay.show{display:flex}
+    .install-card{width:min(92vw,460px);background:#fff;border-radius:20px;padding:24px;box-shadow:0 20px 70px rgba(0,0,0,.22);text-align:center}
+    .install-card .logo{width:68px;height:68px;margin-bottom:12px}
+    .install-card h2{margin:0 0 10px;font-size:22px}.install-card p{margin:0 0 18px;color:var(--muted);line-height:1.7;font-size:14px}
+    .install-actions{display:flex;gap:10px;justify-content:center}
+    button{border:0;border-radius:10px;padding:12px 18px;font:inherit;cursor:pointer}
+    .btn-install{background:var(--primary);color:#fff;min-width:150px}.btn-later{background:#eef2f7;color:var(--text);min-width:100px}
+    .help{margin-top:14px;color:#6b7280;font-size:12px;line-height:1.6}.help a{color:var(--primary)}
+    #installHelp{display:none}
+    .error{position:fixed;inset:auto 16px 16px 16px;z-index:60;display:none;padding:12px 14px;border-radius:12px;background:#fde8e6;color:#a50e0e;border:1px solid #f5c2be;direction:rtl;line-height:1.6;font-size:13px}
+    .error.show{display:block}
+  </style>
+</head>
+<body>
+  <div class="gateway-loading" id="loading">
+    <div class="loading-card">
+      <div class="logo">MR</div>
+      <h1>طلبات المواد</h1>
+      <p>جاري فتح التطبيق...</p>
+    </div>
+  </div>
+
+  <iframe id="appFrame" title="تطبيق طلبات المواد"
+          allow="fullscreen; clipboard-read; clipboard-write"
+          referrerpolicy="strict-origin-when-cross-origin"></iframe>
+
+  <div class="install-overlay" id="installOverlay" aria-hidden="true">
+    <div class="install-card">
+      <div class="logo">MR</div>
+      <h2>تثبيت تطبيق طلبات المواد</h2>
+      <p>ثبّت التطبيق على هاتفك للوصول إليه مباشرة من الشاشة الرئيسية.</p>
+      <div class="install-actions">
+        <button class="btn-install" id="installButton">تثبيت التطبيق</button>
+        <button class="btn-later" id="laterButton">لاحقًا</button>
+      </div>
+      <div class="help" id="installHelp">
+        إذا لم يظهر حوار التثبيت، افتح قائمة Chrome ⋮ ثم اختر
+        <b>إضافة إلى الشاشة الرئيسية</b> أو <b>تثبيت التطبيق</b>.
+      </div>
+    </div>
+  </div>
+
+  <div class="error" id="errorBox"></div>
+
+  <script src="/config.js"></script>
+  <script>
+    (() => {
+      const APP_URL = String(window.MATERIAL_REQUESTS_APP_URL || '').trim();
+      const frame = document.getElementById('appFrame');
+      const loading = document.getElementById('loading');
+      const overlay = document.getElementById('installOverlay');
+      const installButton = document.getElementById('installButton');
+      const laterButton = document.getElementById('laterButton');
+      const installHelp = document.getElementById('installHelp');
+      const errorBox = document.getElementById('errorBox');
+      let deferredPrompt = null;
+
+      function isStandalone() {
+        return window.matchMedia('(display-mode: standalone)').matches ||
+               window.navigator.standalone === true;
+      }
+      function showInstall() {
+        if (isStandalone()) return;
+        overlay.classList.add('show');
+        overlay.setAttribute('aria-hidden', 'false');
+      }
+      function hideInstall() {
+        overlay.classList.remove('show');
+        overlay.setAttribute('aria-hidden', 'true');
+      }
+      function showError(message) {
+        errorBox.textContent = message;
+        errorBox.classList.add('show');
+      }
+
+      // We invite the user immediately. The browser's native prompt is
+      // invoked only after the user taps the install button.
+      window.addEventListener('beforeinstallprompt', event => {
+        event.preventDefault();
+        deferredPrompt = event;
+        showInstall();
+      });
+
+      installButton.addEventListener('click', async () => {
+        if (!deferredPrompt) {
+          installHelp.style.display = 'block';
+          return;
+        }
+        const event = deferredPrompt;
+        deferredPrompt = null;
+        try {
+          await event.prompt();
+          await event.userChoice;
+          hideInstall();
+        } catch (e) {
+          console.warn(e);
+          installHelp.style.display = 'block';
+        }
+      });
+
+      laterButton.addEventListener('click', hideInstall);
+      window.addEventListener('appinstalled', () => {
+        deferredPrompt = null;
+        hideInstall();
+      });
+
+      // Immediate custom install invitation/fallback.
+      setTimeout(() => {
+        if (!isStandalone()) showInstall();
+      }, 350);
+
+      if (!APP_URL || APP_URL.includes('PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE')) {
+        loading.classList.add('hidden');
+        showError('ضع رابط Web App الخاص بـ Google Apps Script داخل public/config.js.');
+        return;
+      }
+
+      frame.src = APP_URL;
+      frame.addEventListener('load', () => loading.classList.add('hidden'), {once:true});
+    })();
+  </script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js', {updateViaCache:'none'})
+          .then(reg => reg.update().catch(() => {}))
+          .catch(err => console.warn('Service worker registration failed:', err));
+      });
+    }
+  </script>
+</body>
+</html>
